@@ -1,0 +1,61 @@
+name: App Build and Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push backend image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_REPO: restaurant-app-backend
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -f Dockerfile.backend -t $ECR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG
+
+      - name: Build and push frontend image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_REPO: restaurant-app-frontend
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -f menu-frontend/Dockerfile -t $ECR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG menu-frontend
+          docker push $ECR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name restaurant-app --region us-west-2
+
+      - name: Apply Kubernetes manifests
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          kubectl apply -f terraform/k8s/namespace.yaml
+          kubectl apply -f terraform/k8s/sqlite-pvc.yaml
+          sed -e "s|<ECR_BACKEND_IMAGE>|$ECR_REGISTRY/restaurant-app-backend|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/backend-deployment.yaml | kubectl apply -f -
+          sed -e "s|<ECR_FRONTEND_IMAGE>|$ECR_REGISTRY/restaurant-app-frontend|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/frontend-deployment.yaml | kubectl apply -f -
+          kubectl apply -f terraform/k8s/ingress.yaml
+

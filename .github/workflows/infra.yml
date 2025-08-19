@@ -1,0 +1,190 @@
+name: Infra Apply/Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose apply or destroy"
+        required: true
+        default: apply
+        type: choice
+        options:
+          - apply
+          - destroy
+      environment:
+        description: "Environment folder under terraform/envs (e.g., dev)"
+        required: true
+        default: dev
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  bootstrap-backend:
+    runs-on: ubuntu-latest
+    outputs:
+      bucket: ${{ steps.outputs_step.outputs.bucket }}
+      ddb: ${{ steps.outputs_step.outputs.ddb }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Bootstrap state backend (S3 + DynamoDB)
+        run: |
+          terraform -chdir=terraform/bootstrap init -input=false
+          terraform -chdir=terraform/bootstrap apply -auto-approve -input=false \
+            -var aws_region=us-west-2 -var project_name=restaurant-app
+
+      - name: Read backend outputs
+        id: outputs_step
+        run: |
+          BUCKET=$(terraform -chdir=terraform/bootstrap output -raw backend_bucket)
+          DDB=$(terraform -chdir=terraform/bootstrap output -raw backend_dynamodb_table)
+          echo "bucket=$BUCKET" >> $GITHUB_OUTPUT
+          echo "ddb=$DDB" >> $GITHUB_OUTPUT
+
+  infra:
+    needs: bootstrap-backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init with remote backend
+        working-directory: terraform/envs/${{ github.event.inputs.environment }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ needs.bootstrap-backend.outputs.bucket }}" \
+            -backend-config="key=envs/${{ github.event.inputs.environment }}/terraform.tfstate" \
+            -backend-config="region=us-west-2" \
+            -backend-config="dynamodb_table=${{ needs.bootstrap-backend.outputs.ddb }}" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        working-directory: terraform/envs/${{ github.event.inputs.environment }}
+        run: |
+          terraform apply -auto-approve -input=false \
+            -var aws_region=us-west-2 -var project_name=restaurant-app
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        working-directory: terraform/envs/${{ github.event.inputs.environment }}
+        run: |
+          terraform destroy -auto-approve -input=false \
+            -var aws_region=us-west-2 -var project_name=restaurant-app
+
+name: Infra Apply/Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose apply or destroy"
+        required: true
+        default: apply
+        type: choice
+        options:
+          - apply
+          - destroy
+      environment:
+        description: "Environment folder under terraform/envs (e.g., dev)"
+        required: true
+        default: dev
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  bootstrap-backend:
+    runs-on: ubuntu-latest
+    outputs:
+      bucket: ${{ steps.outputs_step.outputs.bucket }}
+      ddb: ${{ steps.outputs_step.outputs.ddb }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Bootstrap state backend (S3 + DynamoDB)
+        run: |
+          terraform -chdir=terraform/bootstrap init -input=false
+          terraform -chdir=terraform/bootstrap apply -auto-approve -input=false \
+            -var aws_region=us-west-2 -var project_name=restaurant-app
+
+      - name: Read backend outputs
+        id: outputs_step
+        run: |
+          BUCKET=$(terraform -chdir=terraform/bootstrap output -raw backend_bucket)
+          DDB=$(terraform -chdir=terraform/bootstrap output -raw backend_dynamodb_table)
+          echo "bucket=$BUCKET" >> $GITHUB_OUTPUT
+          echo "ddb=$DDB" >> $GITHUB_OUTPUT
+
+  infra:
+    needs: bootstrap-backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init with remote backend
+        working-directory: terraform/envs/${{ github.event.inputs.environment }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ needs.bootstrap-backend.outputs.bucket }}" \
+            -backend-config="key=envs/${{ github.event.inputs.environment }}/terraform.tfstate" \
+            -backend-config="region=us-west-2" \
+            -backend-config="dynamodb_table=${{ needs.bootstrap-backend.outputs.ddb }}" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        working-directory: terraform/envs/${{ github.event.inputs.environment }}
+        run: |
+          terraform apply -auto-approve -input=false \
+            -var aws_region=us-west-2 -var project_name=restaurant-app
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        working-directory: terraform/envs/${{ github.event.inputs.environment }}
+        run: |
+          terraform destroy -auto-approve -input=false \
+            -var aws_region=us-west-2 -var project_name=restaurant-app
+
