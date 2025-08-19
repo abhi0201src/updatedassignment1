@@ -1,0 +1,29 @@
+version: "3.9"
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: restaurant-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+    environment:
+      - DJANGO_SETTINGS_MODULE=RestaurantCore.settings
+    depends_on: []
+
+  frontend:
+    build:
+      context: ./menu-frontend
+      dockerfile: Dockerfile
+    container_name: restaurant-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_TELEMETRY_DISABLED=1
+    volumes:
+      - ./menu-frontend:/app
+    depends_on:
+      - backend
+
