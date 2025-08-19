@@ -16,6 +16,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: us-west-2
       AWS_REGION: us-west-2
+      CLUSTER_NAME: restaurant-app
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,11 +50,28 @@ jobs:
           docker build -f menu-frontend/Dockerfile -t $ECR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG menu-frontend
           docker push $ECR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG
 
-      - name: Update kubeconfig
+      - name: Check EKS cluster exists
+        id: check-eks
         run: |
-          aws eks update-kubeconfig --name restaurant-app --region us-west-2
+          if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup kubectl
+        if: steps.check-eks.outputs.exists == 'true'
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.29.0
+
+      - name: Update kubeconfig
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
 
       - name: Apply Kubernetes manifests
+        if: steps.check-eks.outputs.exists == 'true'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
