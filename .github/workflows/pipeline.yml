@@ -111,6 +111,8 @@ jobs:
           for i in {1..30}; do
             READY=$(kubectl get nodes --no-headers 2>/dev/null | awk '{print $2}' | grep -c Ready || true)
             if [ "$READY" -ge 1 ]; then echo "Nodes ready: $READY"; break; fi; echo "Waiting for nodes..."; sleep 20; done
+          kubectl get nodes -o wide || true
+          aws eks describe-nodegroup --cluster-name "$CLUSTER_NAME" --nodegroup-name default --region "$AWS_REGION" || true
 
       - name: Terraform Destroy
         if: ${{ github.event.inputs.action == 'destroy' }}

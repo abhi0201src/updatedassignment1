@@ -39,6 +39,8 @@ module "eks" {
       max_size     = 3
       min_size     = 1
       instance_types = ["t3.medium"]
+      # Place nodes in public subnets to simplify connectivity (public IPs)
+      subnet_ids = module.vpc.public_subnets
     }
   }
 }
