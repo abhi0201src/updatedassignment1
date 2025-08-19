@@ -28,6 +28,11 @@ module "eks" {
   subnet_ids               = module.vpc.private_subnets
   control_plane_subnet_ids = module.vpc.private_subnets
 
+  # Ensure the API server is reachable from GitHub runners (public endpoint)
+  cluster_endpoint_public_access  = true
+  cluster_endpoint_private_access = false
+  public_access_cidrs             = ["0.0.0.0/0"]
+
   eks_managed_node_groups = {
     default = {
       desired_size = 2
