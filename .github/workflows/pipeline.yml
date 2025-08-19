@@ -1,0 +1,166 @@
+name: Full Pipeline (Infra + App)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose deploy or destroy"
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - destroy
+      environment:
+        description: "Environment folder under terraform/envs (e.g., dev)"
+        required: true
+        default: dev
+
+permissions:
+  contents: read
+
+env:
+  AWS_DEFAULT_REGION: us-west-2
+  AWS_REGION: us-west-2
+  CLUSTER_NAME: restaurant-app
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    outputs:
+      bucket: ${{ steps.outputs_step.outputs.bucket }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Bootstrap state backend (S3)
+        run: |
+          terraform -chdir=terraform/bootstrap init -input=false
+          terraform -chdir=terraform/bootstrap apply -auto-approve -input=false \
+            -var aws_region=$AWS_REGION -var project_name=restaurant-app
+
+      - name: Read backend outputs
+        id: outputs_step
+        run: |
+          BUCKET=$(terraform -chdir=terraform/bootstrap output -raw backend_bucket)
+          echo "bucket=$BUCKET" >> $GITHUB_OUTPUT
+
+  infra:
+    needs: bootstrap
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    outputs:
+      applied: ${{ steps.set_applied.outputs.applied }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init with remote backend
+        working-directory: terraform/envs/${{ github.event.inputs.environment || 'dev' }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ needs.bootstrap.outputs.bucket }}" \
+            -backend-config="key=envs/${{ github.event.inputs.environment || 'dev' }}/terraform.tfstate" \
+            -backend-config="region=$AWS_REGION" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform Apply
+        if: ${{ github.event.inputs.action == 'deploy' || github.event_name == 'push' }}
+        working-directory: terraform/envs/${{ github.event.inputs.environment || 'dev' }}
+        run: |
+          terraform apply -auto-approve -input=false \
+            -var aws_region=$AWS_REGION -var project_name=restaurant-app
+
+      - name: Terraform Destroy
+        if: ${{ github.event.inputs.action == 'destroy' }}
+        working-directory: terraform/envs/${{ github.event.inputs.environment || 'dev' }}
+        run: |
+          terraform destroy -auto-approve -input=false \
+            -var aws_region=$AWS_REGION -var project_name=restaurant-app
+
+      - name: Mark applied
+        id: set_applied
+        run: echo "applied=true" >> $GITHUB_OUTPUT
+
+  app:
+    needs: infra
+    if: ${{ needs.infra.outputs.applied == 'true' && (github.event.inputs.action == 'deploy' || github.event_name == 'push') }}
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      ECR_BACKEND: restaurant-app-backend
+      ECR_FRONTEND: restaurant-app-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure ECR repositories exist
+        run: |
+          aws ecr describe-repositories --repository-names "$ECR_BACKEND" >/dev/null 2>&1 || \
+          aws ecr create-repository --repository-name "$ECR_BACKEND" --image-scanning-configuration scanOnPush=true
+          aws ecr describe-repositories --repository-names "$ECR_FRONTEND" >/dev/null 2>&1 || \
+          aws ecr create-repository --repository-name "$ECR_FRONTEND" --image-scanning-configuration scanOnPush=true
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push backend image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_REPO: ${{ env.ECR_BACKEND }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -f Dockerfile.backend -t $ECR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG
+
+      - name: Build and push frontend image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_REPO: ${{ env.ECR_FRONTEND }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -f menu-frontend/Dockerfile -t $ECR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG menu-frontend
+          docker push $ECR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG
+
+      - name: Check EKS cluster exists
+        id: check-eks
+        run: |
+          if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install kubectl
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          curl -Lo kubectl https://storage.googleapis.com/kubernetes-release/release/v1.29.0/bin/linux/amd64/kubectl
+          sudo install kubectl /usr/local/bin/kubectl
+
+      - name: Update kubeconfig
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Apply Kubernetes manifests
+        if: steps.check-eks.outputs.exists == 'true'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          kubectl apply -f terraform/k8s/namespace.yaml
+          kubectl apply -f terraform/k8s/sqlite-pvc.yaml
+          sed -e "s|<ECR_BACKEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_BACKEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/backend-deployment.yaml | kubectl apply -f -
+          sed -e "s|<ECR_FRONTEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_FRONTEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/frontend-deployment.yaml | kubectl apply -f -
+          kubectl apply -f terraform/k8s/ingress.yaml
+
