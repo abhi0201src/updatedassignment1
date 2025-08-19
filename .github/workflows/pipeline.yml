@@ -178,6 +178,8 @@ jobs:
         if: steps.check-eks.outputs.exists == 'true'
         run: |
           aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+          # Test auth
+          kubectl auth can-i list pods --all-namespaces || true
 
       - name: Apply Kubernetes manifests
         if: steps.check-eks.outputs.exists == 'true'

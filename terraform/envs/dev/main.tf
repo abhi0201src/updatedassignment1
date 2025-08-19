@@ -2,6 +2,8 @@ locals {
   name = var.project_name
 }
 
+data "aws_caller_identity" "current" {}
+
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
@@ -32,6 +34,14 @@ module "eks" {
   cluster_endpoint_public_access         = true
   cluster_endpoint_private_access        = false
   cluster_endpoint_public_access_cidrs   = ["0.0.0.0/0"]
+
+  manage_aws_auth_configmap = true
+  access_entries = {
+    admin = {
+      principal_arn     = data.aws_caller_identity.current.arn
+      kubernetes_groups = ["system:masters"]
+    }
+  }
 
   eks_managed_node_groups = {
     default = {
