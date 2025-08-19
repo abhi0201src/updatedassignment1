@@ -39,17 +39,28 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
 
-      - name: Bootstrap state backend (S3)
+      - name: Ensure S3 backend bucket exists
+        id: ensure_bucket
         run: |
-          terraform -chdir=terraform/bootstrap init -input=false
-          terraform -chdir=terraform/bootstrap apply -auto-approve -input=false \
-            -var aws_region=$AWS_REGION -var project_name=restaurant-app
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET="restaurant-app-tfstate-${ACCOUNT_ID}"
+          if aws s3api head-bucket --bucket "$BUCKET" >/dev/null 2>&1; then
+            echo "S3 state bucket already exists: $BUCKET"
+            echo "bucket=$BUCKET" >> $GITHUB_OUTPUT
+          else
+            echo "Creating S3 state bucket via Terraform bootstrap"
+            terraform -chdir=terraform/bootstrap init -input=false
+            terraform -chdir=terraform/bootstrap apply -auto-approve -input=false \
+              -var aws_region=$AWS_REGION -var project_name=restaurant-app
+            # Read output (should match computed name)
+            TF_BUCKET=$(terraform -chdir=terraform/bootstrap output -raw backend_bucket)
+            echo "bucket=${TF_BUCKET}" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Read backend outputs
+      - name: Pass bucket output
         id: outputs_step
         run: |
-          BUCKET=$(terraform -chdir=terraform/bootstrap output -raw backend_bucket)
-          echo "bucket=$BUCKET" >> $GITHUB_OUTPUT
+          echo "bucket=${{ steps.ensure_bucket.outputs.bucket }}" >> $GITHUB_OUTPUT
 
   infra:
     needs: bootstrap
