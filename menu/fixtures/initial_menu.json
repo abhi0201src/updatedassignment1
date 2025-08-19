@@ -1,0 +1,6 @@
+[
+  {"model": "menu.menu", "pk": 1, "fields": {"name": "Pizza", "price": 25}},
+  {"model": "menu.menu", "pk": 2, "fields": {"name": "Burger", "price": 9.99}},
+  {"model": "menu.menu", "pk": 3, "fields": {"name": "Pasta", "price": 12.5}},
+  {"model": "menu.menu", "pk": 4, "fields": {"name": "Salad", "price": 7.5}}
+]
