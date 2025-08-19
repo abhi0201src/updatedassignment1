@@ -19,10 +19,10 @@ class MenuApiTests(TestCase):
 
     def test_create_menu_item(self):
         payload = {"name": "Test Item", "price": 5.5}
-        response = self.client.post("/api/menu", payload, format="json")
+        response = self.client.post("/api/menu/", payload, format="json")
         self.assertEqual(response.status_code, 201)
         # List to confirm presence
-        list_resp = self.client.get("/api/menu")
+        list_resp = self.client.get("/api/menu/")
         self.assertEqual(list_resp.status_code, 200)
         names = [item["name"] for item in list_resp.json()]
         self.assertIn("Test Item", names)
