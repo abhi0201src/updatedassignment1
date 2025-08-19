@@ -25,7 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       bucket: ${{ steps.outputs_step.outputs.bucket }}
-      ddb: ${{ steps.outputs_step.outputs.ddb }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,7 +38,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Bootstrap state backend (S3 + DynamoDB)
+      - name: Bootstrap state backend (S3)
         run: |
           terraform -chdir=terraform/bootstrap init -input=false
           terraform -chdir=terraform/bootstrap apply -auto-approve -input=false \
@@ -49,9 +48,7 @@ jobs:
         id: outputs_step
         run: |
           BUCKET=$(terraform -chdir=terraform/bootstrap output -raw backend_bucket)
-          DDB=$(terraform -chdir=terraform/bootstrap output -raw backend_dynamodb_table)
           echo "bucket=$BUCKET" >> $GITHUB_OUTPUT
-          echo "ddb=$DDB" >> $GITHUB_OUTPUT
 
   infra:
     needs: bootstrap-backend
@@ -76,7 +73,6 @@ jobs:
             -backend-config="bucket=${{ needs.bootstrap-backend.outputs.bucket }}" \
             -backend-config="key=envs/${{ github.event.inputs.environment }}/terraform.tfstate" \
             -backend-config="region=us-west-2" \
-            -backend-config="dynamodb_table=${{ needs.bootstrap-backend.outputs.ddb }}" \
             -backend-config="encrypt=true"
 
       - name: Terraform Apply
