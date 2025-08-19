@@ -2,7 +2,8 @@ from rest_framework import routers
 
 from menu.viewsets import MenuViewSet
 
-router = routers.SimpleRouter(trailing_slash=False)
+# Accept both with and without trailing slash
+router = routers.SimpleRouter(trailing_slash='/?')
 
 router.register(r'menu', MenuViewSet, basename="menu")
 
