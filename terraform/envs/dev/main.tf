@@ -31,17 +31,12 @@ module "eks" {
   control_plane_subnet_ids = module.vpc.private_subnets
 
   # Ensure the API server is reachable from GitHub runners (public endpoint)
-  cluster_endpoint_public_access         = true
-  cluster_endpoint_private_access        = false
-  cluster_endpoint_public_access_cidrs   = ["0.0.0.0/0"]
+  cluster_endpoint_public_access       = true
+  cluster_endpoint_private_access      = false
+  cluster_endpoint_public_access_cidrs = ["0.0.0.0/0"]
 
-  manage_aws_auth_configmap = true
-  access_entries = {
-    admin = {
-      principal_arn     = data.aws_caller_identity.current.arn
-      kubernetes_groups = ["system:masters"]
-    }
-  }
+  # Grant admin permissions to the identity that creates the cluster (the CI credentials)
+  enable_cluster_creator_admin_permissions = true
 
   eks_managed_node_groups = {
     default = {
