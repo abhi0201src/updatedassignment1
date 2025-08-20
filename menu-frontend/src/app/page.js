@@ -7,8 +7,10 @@ import { useRouter, useSearchParams } from "next/navigation";
  * Fetches a menu item by ID.
  * @param {number} id The ID of the menu item to retrieve.
  */
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+
 async function deleteMenu(id) {
-  const res = await fetch(`http://127.0.0.1:8000/api/menu/${id}/`, {
+  const res = await fetch(`${API_BASE}/api/menu/${id}/`, {
     method: "DELETE",
   });
   if (!res.ok) {
@@ -21,7 +23,7 @@ async function deleteMenu(id) {
  * Fetches menu data from the server.
  */
 async function getData() {
-  const res = await fetch("http://127.0.0.1:8000/api/menu/");
+  const res = await fetch(`${API_BASE}/api/menu/`);
   if (!res.ok) {
     throw new Error("Failed to fetch data");
   }

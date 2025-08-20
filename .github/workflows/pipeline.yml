@@ -197,6 +197,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           kubectl apply --validate=false -f terraform/k8s/namespace.yaml
+          kubectl apply --validate=false -f terraform/k8s/configmap.yaml
           kubectl apply --validate=false -f terraform/k8s/sqlite-pvc.yaml
           sed -e "s|<ECR_BACKEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_BACKEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/backend-deployment.yaml | kubectl apply --validate=false -f -
           sed -e "s|<ECR_FRONTEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_FRONTEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/frontend-deployment.yaml | kubectl apply --validate=false -f -
@@ -224,4 +225,12 @@ jobs:
 
           echo "Frontend: http://$FE_HOST" | tee -a $GITHUB_STEP_SUMMARY
           echo "Backend health: http://$BE_HOST/health" | tee -a $GITHUB_STEP_SUMMARY
+
+      - name: Set frontend API base to backend URL
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          # Update ConfigMap with backend LB URL so Next.js calls the correct API
+          BE_HOST=$(kubectl -n restaurant get svc backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          kubectl -n restaurant patch configmap app-config --type merge -p '{"data":{"apiBase":"http://'"$BE_HOST"'""}}'
+          kubectl rollout restart deploy/frontend -n restaurant
 
