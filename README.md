@@ -5,7 +5,7 @@ article concerning this code here on my [blog](https://koladev.xyz/posts/django-
 
 ## Starting with Django and React
 
-First launch the API server.
+First launch the API server. 
 
 ```bash
 cd django-api-nextjs
