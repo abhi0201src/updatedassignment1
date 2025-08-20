@@ -234,4 +234,5 @@ jobs:
           PATCH_JSON=$(jq -n --arg url "http://$BE_HOST" '{data:{apiBase:$url}}')
           kubectl -n restaurant patch configmap app-config --type merge -p "$PATCH_JSON"
           kubectl rollout restart deploy/frontend -n restaurant
+          kubectl -n restaurant wait --for=condition=available --timeout=180s deploy/frontend
 
