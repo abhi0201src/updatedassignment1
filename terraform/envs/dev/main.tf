@@ -17,6 +17,9 @@ module "vpc" {
 
   enable_nat_gateway = true
   single_nat_gateway = true
+
+  # Ensure instances in public subnets receive public IPs automatically
+  map_public_ip_on_launch = true
 }
 
 module "eks" {
