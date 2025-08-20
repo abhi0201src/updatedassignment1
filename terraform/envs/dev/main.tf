@@ -35,13 +35,7 @@ module "eks" {
   cluster_endpoint_private_access        = false
   cluster_endpoint_public_access_cidrs   = ["0.0.0.0/0"]
 
-  manage_aws_auth_configmap = true
-  access_entries = {
-    admin = {
-      principal_arn     = data.aws_caller_identity.current.arn
-      kubernetes_groups = ["system:masters"]
-    }
-  }
+  enable_cluster_creator_admin_permissions = true
 
   eks_managed_node_groups = {
     default = {
