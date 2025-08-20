@@ -231,6 +231,7 @@ jobs:
         run: |
           # Update ConfigMap with backend LB URL so Next.js calls the correct API
           BE_HOST=$(kubectl -n restaurant get svc backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-          kubectl -n restaurant patch configmap app-config --type merge -p '{"data":{"apiBase":"http://'"$BE_HOST"'""}}'
+          PATCH_JSON=$(jq -n --arg url "http://$BE_HOST" '{data:{apiBase:$url}}')
+          kubectl -n restaurant patch configmap app-config --type merge -p "$PATCH_JSON"
           kubectl rollout restart deploy/frontend -n restaurant
 
