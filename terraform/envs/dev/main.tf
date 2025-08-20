@@ -20,6 +20,17 @@ module "vpc" {
 
   # Ensure instances in public subnets receive public IPs automatically
   map_public_ip_on_launch = true
+
+  # Tag subnets so EKS can provision external and internal LoadBalancers
+  public_subnet_tags = {
+    "kubernetes.io/cluster/${local.name}" = "shared"
+    "kubernetes.io/role/elb"               = 1
+  }
+
+  private_subnet_tags = {
+    "kubernetes.io/cluster/${local.name}"   = "shared"
+    "kubernetes.io/role/internal-elb"       = 1
+  }
 }
 
 module "eks" {

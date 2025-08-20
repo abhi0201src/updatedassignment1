@@ -216,7 +216,10 @@ jobs:
             FE_HOST=$(kubectl -n restaurant get svc frontend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
             BE_HOST=$(kubectl -n restaurant get svc backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
             if [ -n "$FE_HOST" ] && [ -n "$BE_HOST" ]; then break; fi
-            echo "Waiting for LoadBalancer hostnames..."; sleep 10;
+            echo "Waiting for LoadBalancer hostnames...";
+            kubectl -n restaurant get svc frontend -o wide || true
+            kubectl -n restaurant get svc backend -o wide || true
+            sleep 10;
           done
 
           echo "Frontend: http://$FE_HOST" | tee -a $GITHUB_STEP_SUMMARY
