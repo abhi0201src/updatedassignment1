@@ -2,25 +2,21 @@
 set -e
 
 cd /app
+
+# Run database migrations
 python manage.py migrate --noinput
-python - <<'PY'
-import os
-import django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'RestaurantCore.settings')
-django.setup()
-from menu.models import Menu
 
-if not Menu.objects.exists():
-    seed_items = [
-        ("Pizza", 25.0),
-        ("Burger", 9.99),
-        ("Pasta", 12.5),
-        ("Salad", 7.5),
-    ]
-    Menu.objects.bulk_create([Menu(name=n, price=p) for n, p in seed_items])
-    print("Seeded default menu items")
-else:
-    print("Menu items already exist; skipping seed")
-PY
+# Load initial data from fixture (if it exists)
+# The `|| true` ensures the script continues even if this command fails
+if [ -f "menu/fixtures/initial_menu.json" ]; then
+  echo "Loading initial data from fixture..."
+  python manage.py loaddata initial_menu.json || echo "Fixture load failed or already loaded; continuing..."
+else
+  echo "Fixture file not found; skipping initial data load."
+fi
+
+# Collect static files
+python manage.py collectstatic --noinput
+
+# Start server
 exec python manage.py runserver 0.0.0.0:8000
-
