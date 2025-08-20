@@ -202,3 +202,23 @@ jobs:
           sed -e "s|<ECR_FRONTEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_FRONTEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/frontend-deployment.yaml | kubectl apply --validate=false -f -
           kubectl apply --validate=false -f terraform/k8s/ingress.yaml
 
+      - name: Expose services and print URLs
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          set -e
+          # Expose frontend via LoadBalancer (port 80 -> 3000)
+          kubectl -n restaurant patch svc frontend -p '{"spec":{"type":"LoadBalancer","ports":[{"port":80,"targetPort":3000}]}}' || true
+          # Expose backend via LoadBalancer (port 80 -> 8000)
+          kubectl -n restaurant patch svc backend -p '{"spec":{"type":"LoadBalancer","ports":[{"port":80,"targetPort":8000}]}}' || true
+
+          # Wait for external hostnames
+          for i in {1..60}; do
+            FE_HOST=$(kubectl -n restaurant get svc frontend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            BE_HOST=$(kubectl -n restaurant get svc backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            if [ -n "$FE_HOST" ] && [ -n "$BE_HOST" ]; then break; fi
+            echo "Waiting for LoadBalancer hostnames..."; sleep 10;
+          done
+
+          echo "Frontend: http://$FE_HOST" | tee -a $GITHUB_STEP_SUMMARY
+          echo "Backend health: http://$BE_HOST/health" | tee -a $GITHUB_STEP_SUMMARY
+
