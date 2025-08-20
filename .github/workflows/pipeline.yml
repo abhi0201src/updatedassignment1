@@ -87,8 +87,17 @@ jobs:
       - name: Import pre-existing ECR repositories (if any)
         working-directory: terraform/envs/${{ github.event.inputs.environment || 'dev' }}
         run: |
-          terraform state show aws_ecr_repository.backend >/dev/null 2>&1 || terraform import aws_ecr_repository.backend restaurant-app-backend || true
-          terraform state show aws_ecr_repository.frontend >/dev/null 2>&1 || terraform import aws_ecr_repository.frontend restaurant-app-frontend || true
+          set -e
+          for repo in restaurant-app-backend restaurant-app-frontend; do
+            if aws ecr describe-repositories --repository-names "$repo" >/dev/null 2>&1; then
+              # Import only if not already in state
+              if ! terraform state show aws_ecr_repository.${repo##restaurant-app-} >/dev/null 2>&1; then
+                # Map repo name to TF resource name (backend/frontend)
+                rname=$(echo "$repo" | awk -F'-' '{print $3}')
+                terraform import aws_ecr_repository.$rname "$repo" || true
+              fi
+            fi
+          done
 
       - name: Terraform Apply
         if: ${{ github.event.inputs.action == 'deploy' || github.event_name == 'push' }}
