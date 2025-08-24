@@ -100,6 +100,17 @@ jobs:
             fi
           done
 
+      - name: Import existing EKS KMS key and alias (if any)
+        working-directory: terraform/envs/${{ github.event.inputs.environment || 'dev' }}
+        run: |
+          set -e
+          ALIAS="alias/eks/${CLUSTER_NAME}"
+          if aws kms describe-key --key-id "$ALIAS" >/dev/null 2>&1; then
+            KEY_ARN=$(aws kms describe-key --key-id "$ALIAS" --query 'KeyMetadata.Arn' --output text)
+            terraform import 'module.eks.module.kms.aws_kms_alias.this["cluster"]' "$ALIAS" || true
+            terraform import 'module.eks.module.kms.aws_kms_key.this["cluster"]' "$KEY_ARN" || true
+          fi
+
       - name: Terraform Apply
         if: ${{ github.event.inputs.action == 'deploy' || github.event_name == 'push' }}
         working-directory: terraform/envs/${{ github.event.inputs.environment || 'dev' }}
