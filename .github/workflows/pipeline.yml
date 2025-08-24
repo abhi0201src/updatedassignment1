@@ -229,7 +229,7 @@ jobs:
           # Test auth
           kubectl auth can-i list pods --all-namespaces || true
 
-      - name: Apply Kubernetes manifests
+      - name: Apply Kubernetes base manifests (no Ingress yet)
         if: steps.check-eks.outputs.exists == 'true'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -254,7 +254,11 @@ jobs:
           sed -e "s|<ECR_FRONTEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_FRONTEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/frontend-deployment.yaml | kubectl apply --validate=false -f -
           kubectl -n restaurant scale deploy/backend --replicas=1 || true
           kubectl -n restaurant rollout status deploy/backend --timeout=180s || true
-          kubectl apply --validate=false -f terraform/k8s/ingress.yaml
+
+      - name: Apply IngressClass for AWS ALB controller
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          kubectl apply --validate=false -f terraform/k8s/ingressclass.yaml
 
       - name: "Debug: list namespaces and resources"
         if: steps.check-eks.outputs.exists == 'true'
@@ -276,24 +280,26 @@ jobs:
             --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"='${{ needs.infra.outputs.alb_irsa }}' \
             --set vpcId=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" --query 'cluster.resourcesVpcConfig.vpcId' --output text)
 
-      - name: Wait for ALB Ingress
+      - name: Wait for ALB controller to be ready
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          kubectl -n kube-system rollout status deploy/aws-load-balancer-controller --timeout=180s || true
+
+      - name: Apply Ingress
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          kubectl apply --validate=false -f terraform/k8s/ingress.yaml
+
+      - name: Wait for ALB Ingress and expose URL
         if: steps.check-eks.outputs.exists == 'true'
         run: |
           for i in {1..60}; do
             HOST=$(kubectl -n restaurant get ingress restaurant-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-            if [ -n "$HOST" ]; then echo "Ingress: http://$HOST" | tee -a $GITHUB_STEP_SUMMARY; break; fi
+            if [ -n "$HOST" ]; then echo "Application URL: http://$HOST" | tee -a $GITHUB_STEP_SUMMARY; break; fi
             echo "Waiting for Ingress hostname..."; kubectl -n restaurant get ingress restaurant-ingress -o wide || true; sleep 10;
           done
 
-      - name: Set frontend API base to backend URL
-        if: steps.check-eks.outputs.exists == 'true'
-        run: |
-          # Update ConfigMap with backend LB URL so Next.js calls the correct API
-          BE_HOST=$(kubectl -n restaurant get svc backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-          PATCH_JSON=$(jq -n --arg url "http://$BE_HOST" '{data:{apiBase:$url}}')
-          kubectl -n restaurant patch configmap app-config --type merge -p "$PATCH_JSON"
-          kubectl rollout restart deploy/frontend -n restaurant
-          kubectl -n restaurant wait --for=condition=available --timeout=180s deploy/frontend
+      # Removed step to set frontend API base; frontend uses relative API now
 
       - name: "Debug: ALB controller status"
         if: steps.check-eks.outputs.exists == 'true'
@@ -306,8 +312,8 @@ jobs:
         run: |
           HOST=$(kubectl -n restaurant get ingress restaurant-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
           if [ -n "$HOST" ]; then
-            echo "Frontend: http://$HOST" | tee -a $GITHUB_STEP_SUMMARY
-            echo "Backend health: http://$HOST/health" | tee -a $GITHUB_STEP_SUMMARY
+            echo "Application URL: http://$HOST" | tee -a $GITHUB_STEP_SUMMARY
+            echo "Health: http://$HOST/health" | tee -a $GITHUB_STEP_SUMMARY
           else
             echo "Ingress hostname not available yet." | tee -a $GITHUB_STEP_SUMMARY
           fi
