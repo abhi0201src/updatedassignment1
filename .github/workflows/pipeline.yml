@@ -70,6 +70,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     outputs:
       applied: ${{ steps.set_applied.outputs.applied }}
+      cluster_name: ${{ steps.export_cluster.outputs.cluster_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -123,6 +124,27 @@ jobs:
           kubectl get nodes -o wide || true
           aws eks describe-nodegroup --cluster-name "$CLUSTER_NAME" --nodegroup-name default --region "$AWS_REGION" || true
 
+      - name: Export cluster name
+        if: ${{ github.event.inputs.action == 'deploy' || github.event_name == 'push' }}
+        id: export_cluster
+        working-directory: terraform/envs/${{ github.event.inputs.environment || 'dev' }}
+        run: |
+          echo "cluster_name=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
+
+      - name: Pre-destroy: cleanup Kubernetes resources
+        if: ${{ github.event.inputs.action == 'destroy' }}
+        run: |
+          if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" >/dev/null 2>&1; then
+            curl -Lo kubectl https://storage.googleapis.com/kubernetes-release/release/v1.29.0/bin/linux/amd64/kubectl
+            sudo install kubectl /usr/local/bin/kubectl
+            curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+            aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+            helm -n kube-system uninstall aws-load-balancer-controller || true
+            kubectl delete namespace restaurant --ignore-not-found --wait=true || true
+          else
+            echo "Cluster not found; skipping k8s cleanup."
+          fi
+
       - name: Terraform Destroy
         if: ${{ github.event.inputs.action == 'destroy' }}
         working-directory: terraform/envs/${{ github.event.inputs.environment || 'dev' }}
@@ -145,6 +167,10 @@ jobs:
       ECR_FRONTEND: restaurant-app-frontend
     steps:
       - uses: actions/checkout@v4
+
+      - name: Use cluster name from Terraform output
+        if: ${{ needs.infra.outputs.cluster_name != '' }}
+        run: echo "CLUSTER_NAME=${{ needs.infra.outputs.cluster_name }}" >> $GITHUB_ENV
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -202,6 +228,12 @@ jobs:
           sed -e "s|<ECR_BACKEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_BACKEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/backend-deployment.yaml | kubectl apply --validate=false -f -
           sed -e "s|<ECR_FRONTEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_FRONTEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/frontend-deployment.yaml | kubectl apply --validate=false -f -
           kubectl apply --validate=false -f terraform/k8s/ingress.yaml
+
+      - name: Debug: list namespaces and resources
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          kubectl get ns
+          kubectl -n restaurant get all,ingress,pvc || true
 
       - name: Install AWS Load Balancer Controller
         if: steps.check-eks.outputs.exists == 'true'

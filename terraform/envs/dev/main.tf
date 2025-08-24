@@ -61,6 +61,12 @@ module "eks" {
       subnet_ids = module.vpc.public_subnets
     }
   }
+
+  cluster_addons = {
+    aws-ebs-csi-driver = {
+      most_recent = true
+    }
+  }
 }
 
 resource "aws_ecr_repository" "backend" {
