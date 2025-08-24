@@ -237,6 +237,7 @@ jobs:
         run: |
           kubectl apply --validate=false -f terraform/k8s/namespace.yaml
           kubectl apply --validate=false -f terraform/k8s/configmap.yaml
+          kubectl apply --validate=false -f terraform/k8s/ingress-class.yaml
           # Scale backend down before PVC changes to release volume mount
           kubectl -n restaurant scale deploy/backend --replicas=0 || true
           kubectl -n restaurant rollout status deploy/backend --timeout=120s || true
@@ -310,4 +311,10 @@ jobs:
           else
             echo "Ingress hostname not available yet." | tee -a $GITHUB_STEP_SUMMARY
           fi
+
+      - name: "Debug: Ingress and TGB"
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          kubectl -n restaurant describe ingress restaurant-ingress || true
+          kubectl -n restaurant get targetgroupbindings elbv2.k8s.aws || true
 
