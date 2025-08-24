@@ -237,7 +237,7 @@ jobs:
         run: |
           kubectl apply --validate=false -f terraform/k8s/namespace.yaml
           kubectl apply --validate=false -f terraform/k8s/configmap.yaml
-          kubectl apply --validate=false -f terraform/k8s/ingress-class.yaml
+          # IngressClass applied in a later step
           # Scale backend down before PVC changes to release volume mount
           kubectl -n restaurant scale deploy/backend --replicas=0 || true
           kubectl -n restaurant rollout status deploy/backend --timeout=120s || true
@@ -259,6 +259,11 @@ jobs:
         if: steps.check-eks.outputs.exists == 'true'
         run: |
           kubectl apply --validate=false -f terraform/k8s/ingressclass.yaml
+
+      - name: Install AWS Load Balancer Controller CRDs
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          kubectl apply -k github.com/aws/eks-charts/stable/aws-load-balancer-controller//crds?ref=master
 
       - name: "Debug: list namespaces and resources"
         if: steps.check-eks.outputs.exists == 'true'
@@ -284,6 +289,15 @@ jobs:
         if: steps.check-eks.outputs.exists == 'true'
         run: |
           kubectl -n kube-system rollout status deploy/aws-load-balancer-controller --timeout=180s || true
+
+      - name: Verify CRDs and IRSA binding
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          echo "Checking CRDs..." | tee -a $GITHUB_STEP_SUMMARY
+          kubectl api-resources | grep -E "elbv2.k8s.aws|targetgroupbindings" || true
+          echo "ServiceAccount annotations:" | tee -a $GITHUB_STEP_SUMMARY
+          kubectl -n kube-system get sa aws-load-balancer-controller -o jsonpath='{.metadata.annotations}' | tee -a $GITHUB_STEP_SUMMARY || true
+          echo
 
       - name: Apply Ingress
         if: steps.check-eks.outputs.exists == 'true'
@@ -322,5 +336,5 @@ jobs:
         if: steps.check-eks.outputs.exists == 'true'
         run: |
           kubectl -n restaurant describe ingress restaurant-ingress || true
-          kubectl -n restaurant get targetgroupbindings elbv2.k8s.aws || true
+          kubectl get targetgroupbindings.elbv2.k8s.aws -A || true
 
