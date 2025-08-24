@@ -237,13 +237,8 @@ jobs:
         run: |
           kubectl apply --validate=false -f terraform/k8s/namespace.yaml
           kubectl apply --validate=false -f terraform/k8s/configmap.yaml
-          # Install local-path-provisioner if using local-path StorageClass
-          if grep -q 'storageClassName: local-path' terraform/k8s/sqlite-pvc.yaml; then
-            kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.26/deploy/local-path-storage.yaml
-            kubectl -n local-path-storage rollout status deploy/local-path-provisioner --timeout=120s || true
-            # Recreate PVC to avoid immutability errors when changing class
-            kubectl -n restaurant delete pvc sqlite-pvc --ignore-not-found --wait=true || true
-          fi
+          # Recreate PVC if class changed to avoid immutability errors
+          kubectl -n restaurant delete pvc sqlite-pvc --ignore-not-found --wait=true || true
           kubectl apply --validate=false -f terraform/k8s/sqlite-pvc.yaml
           sed -e "s|<ECR_BACKEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_BACKEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/backend-deployment.yaml | kubectl apply --validate=false -f -
           sed -e "s|<ECR_FRONTEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_FRONTEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/frontend-deployment.yaml | kubectl apply --validate=false -f -
@@ -287,4 +282,21 @@ jobs:
           kubectl -n restaurant patch configmap app-config --type merge -p "$PATCH_JSON"
           kubectl rollout restart deploy/frontend -n restaurant
           kubectl -n restaurant wait --for=condition=available --timeout=180s deploy/frontend
+
+      - name: "Debug: ALB controller status"
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          kubectl -n kube-system get deploy aws-load-balancer-controller -o wide || true
+          kubectl -n kube-system logs deploy/aws-load-balancer-controller --tail=50 || true
+
+      - name: "Summarize endpoints"
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          HOST=$(kubectl -n restaurant get ingress restaurant-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+          if [ -n "$HOST" ]; then
+            echo "Frontend: http://$HOST" | tee -a $GITHUB_STEP_SUMMARY
+            echo "Backend health: http://$HOST/health" | tee -a $GITHUB_STEP_SUMMARY
+          else
+            echo "Ingress hostname not available yet." | tee -a $GITHUB_STEP_SUMMARY
+          fi
 
