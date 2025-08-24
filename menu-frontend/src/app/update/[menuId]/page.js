@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
  * Fetches a menu item by ID.
  * @param {number} id The ID of the menu item to retrieve.
  */
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
 
 async function getMenu(id) {
   const res = await fetch(`${API_BASE}/api/menu/${id}/`);
