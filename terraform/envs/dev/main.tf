@@ -69,6 +69,22 @@ module "eks" {
   }
 }
 
+# IRSA role for AWS Load Balancer Controller
+module "lb_controller_irsa" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.37"
+
+  role_name                                 = "${local.name}-alb-controller"
+  attach_load_balancer_controller_policy    = true
+
+  oidc_providers = {
+    eks = {
+      provider_arn               = module.eks.oidc_provider_arn
+      namespace_service_accounts = ["kube-system:aws-load-balancer-controller"]
+    }
+  }
+}
+
 resource "aws_ecr_repository" "backend" {
   name                 = "${local.name}-backend"
   image_tag_mutability = "MUTABLE"
@@ -84,3 +100,4 @@ resource "aws_ecr_repository" "frontend" {
 output "ecr_backend_url" { value = aws_ecr_repository.backend.repository_url }
 output "ecr_frontend_url" { value = aws_ecr_repository.frontend.repository_url }
 output "cluster_name" { value = module.eks.cluster_name }
+output "aws_lb_controller_role_arn" { value = module.lb_controller_irsa.iam_role_arn }
