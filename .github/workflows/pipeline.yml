@@ -292,7 +292,9 @@ jobs:
       - name: Grant node role ELB access (temporary unblock)
         if: steps.check-eks.outputs.exists == 'true'
         run: |
-          ROLE_ARN=$(aws eks describe-nodegroup --cluster-name "$CLUSTER_NAME" --nodegroup-name default --region "$AWS_REGION" --query 'nodegroup.nodeRole' --output text)
+          NODEGROUP=$(aws eks list-nodegroups --cluster-name "$CLUSTER_NAME" --region "$AWS_REGION" --query 'nodegroups[0]' --output text)
+          echo "Nodegroup: $NODEGROUP" | tee -a $GITHUB_STEP_SUMMARY
+          ROLE_ARN=$(aws eks describe-nodegroup --cluster-name "$CLUSTER_NAME" --nodegroup-name "$NODEGROUP" --region "$AWS_REGION" --query 'nodegroup.nodeRole' --output text)
           ROLE_NAME=${ROLE_ARN##*/}
           echo "Node role: $ROLE_NAME" | tee -a $GITHUB_STEP_SUMMARY
           aws iam attach-role-policy --role-name "$ROLE_NAME" --policy-arn arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess || true
