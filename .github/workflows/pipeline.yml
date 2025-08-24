@@ -237,6 +237,13 @@ jobs:
         run: |
           kubectl apply --validate=false -f terraform/k8s/namespace.yaml
           kubectl apply --validate=false -f terraform/k8s/configmap.yaml
+          # Install local-path-provisioner if using local-path StorageClass
+          if grep -q 'storageClassName: local-path' terraform/k8s/sqlite-pvc.yaml; then
+            kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.26/deploy/local-path-storage.yaml
+            kubectl -n local-path-storage rollout status deploy/local-path-provisioner --timeout=120s || true
+            # Recreate PVC to avoid immutability errors when changing class
+            kubectl -n restaurant delete pvc sqlite-pvc --ignore-not-found --wait=true || true
+          fi
           kubectl apply --validate=false -f terraform/k8s/sqlite-pvc.yaml
           sed -e "s|<ECR_BACKEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_BACKEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/backend-deployment.yaml | kubectl apply --validate=false -f -
           sed -e "s|<ECR_FRONTEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_FRONTEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/frontend-deployment.yaml | kubectl apply --validate=false -f -
