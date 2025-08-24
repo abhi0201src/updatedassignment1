@@ -142,7 +142,7 @@ jobs:
         run: |
           echo "cluster_name=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
 
-      - name: Pre-destroy: cleanup Kubernetes resources
+      - name: "Pre-destroy: cleanup Kubernetes resources"
         if: ${{ github.event.inputs.action == 'destroy' }}
         run: |
           if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" >/dev/null 2>&1; then
@@ -240,7 +240,7 @@ jobs:
           sed -e "s|<ECR_FRONTEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_FRONTEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/frontend-deployment.yaml | kubectl apply --validate=false -f -
           kubectl apply --validate=false -f terraform/k8s/ingress.yaml
 
-      - name: Debug: list namespaces and resources
+      - name: "Debug: list namespaces and resources"
         if: steps.check-eks.outputs.exists == 'true'
         run: |
           kubectl get ns
