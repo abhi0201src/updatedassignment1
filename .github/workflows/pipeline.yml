@@ -237,11 +237,22 @@ jobs:
         run: |
           kubectl apply --validate=false -f terraform/k8s/namespace.yaml
           kubectl apply --validate=false -f terraform/k8s/configmap.yaml
-          # Recreate PVC if class changed to avoid immutability errors
+          # Scale backend down before PVC changes to release volume mount
+          kubectl -n restaurant scale deploy/backend --replicas=0 || true
+          kubectl -n restaurant rollout status deploy/backend --timeout=120s || true
+          # Recreate PVC to avoid immutability issues and wait for binding
           kubectl -n restaurant delete pvc sqlite-pvc --ignore-not-found --wait=true || true
           kubectl apply --validate=false -f terraform/k8s/sqlite-pvc.yaml
+          for i in {1..30}; do
+            phase=$(kubectl -n restaurant get pvc sqlite-pvc -o jsonpath='{.status.phase}' 2>/dev/null || echo "");
+            if [ "$phase" = "Bound" ]; then echo "PVC bound"; break; fi;
+            echo "Waiting for PVC to bind..."; sleep 10;
+          done
+          # Apply deployments, then scale backend back up and wait for rollout
           sed -e "s|<ECR_BACKEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_BACKEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/backend-deployment.yaml | kubectl apply --validate=false -f -
           sed -e "s|<ECR_FRONTEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_FRONTEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/frontend-deployment.yaml | kubectl apply --validate=false -f -
+          kubectl -n restaurant scale deploy/backend --replicas=1 || true
+          kubectl -n restaurant rollout status deploy/backend --timeout=180s || true
           kubectl apply --validate=false -f terraform/k8s/ingress.yaml
 
       - name: "Debug: list namespaces and resources"
