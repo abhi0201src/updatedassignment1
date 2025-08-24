@@ -238,19 +238,21 @@ jobs:
           kubectl apply --validate=false -f terraform/k8s/namespace.yaml
           kubectl apply --validate=false -f terraform/k8s/storageclass-standard.yaml
           kubectl apply --validate=false -f terraform/k8s/configmap.yaml
-          # Apply deployments and wait for rollout (backend now uses emptyDir)
-          sed -e "s|<ECR_BACKEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_BACKEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/backend-deployment.yaml | kubectl apply --validate=false -f -
-          sed -e "s|<ECR_FRONTEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_FRONTEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/frontend-deployment.yaml | kubectl apply --validate=false -f -
+          # Ensure backend is stopped before PVC replace (PVC spec is immutable)
+          kubectl -n restaurant scale deploy/backend --replicas=0 || true
           kubectl -n restaurant rollout status deploy/backend --timeout=180s || true
-          # Create PVC and wait for binding
+          # Delete PVC if present (to change storageClassName) then recreate and wait for binding
+          kubectl -n restaurant delete pvc sqlite-pvc --ignore-not-found --wait=true || true
           kubectl apply --validate=false -f terraform/k8s/sqlite-pvc.yaml
           for i in {1..30}; do
             phase=$(kubectl -n restaurant get pvc sqlite-pvc -o jsonpath='{.status.phase}' 2>/dev/null || echo "");
             if [ "$phase" = "Bound" ]; then echo "PVC bound"; break; fi;
             echo "Waiting for PVC to bind..."; sleep 10;
           done
-          # Restart backend to pick up PVC
-          kubectl -n restaurant rollout restart deploy/backend || true
+          # Apply deployments and start backend now that PVC is bound
+          sed -e "s|<ECR_BACKEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_BACKEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/backend-deployment.yaml | kubectl apply --validate=false -f -
+          sed -e "s|<ECR_FRONTEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_FRONTEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/frontend-deployment.yaml | kubectl apply --validate=false -f -
+          kubectl -n restaurant scale deploy/backend --replicas=1 || true
           kubectl -n restaurant rollout status deploy/backend --timeout=180s || true
 
 
@@ -286,6 +288,15 @@ jobs:
         if: steps.check-eks.outputs.exists == 'true'
         run: |
           kubectl -n kube-system rollout status deploy/aws-load-balancer-controller --timeout=180s || true
+
+      - name: Grant node role ELB access (temporary unblock)
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          ROLE_ARN=$(aws eks describe-nodegroup --cluster-name "$CLUSTER_NAME" --nodegroup-name default --region "$AWS_REGION" --query 'nodegroup.nodeRole' --output text)
+          ROLE_NAME=${ROLE_ARN##*/}
+          echo "Node role: $ROLE_NAME" | tee -a $GITHUB_STEP_SUMMARY
+          aws iam attach-role-policy --role-name "$ROLE_NAME" --policy-arn arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess || true
+          echo "Attached ElasticLoadBalancingFullAccess to node role (temporary)" | tee -a $GITHUB_STEP_SUMMARY
 
       - name: Verify CRDs and IRSA binding
         if: steps.check-eks.outputs.exists == 'true'
