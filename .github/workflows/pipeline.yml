@@ -229,6 +229,16 @@ jobs:
           # Test auth
           kubectl auth can-i list pods --all-namespaces || true
 
+      - name: Heal terminating namespace
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          if kubectl get ns restaurant -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null | grep -q .; then
+            echo "Namespace 'restaurant' is terminating; forcing finalization"
+            kubectl get namespace restaurant -o json | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/restaurant/finalize -f - || true
+            kubectl wait --for=delete ns/restaurant --timeout=180s || true
+            kubectl apply --validate=false -f terraform/k8s/namespace.yaml
+          fi
+
       - name: Apply Kubernetes base manifests (no Ingress yet)
         if: steps.check-eks.outputs.exists == 'true'
         env:
