@@ -239,19 +239,23 @@ jobs:
             kubectl apply --validate=false -f terraform/k8s/namespace.yaml
           fi
 
-      - name: Apply Kubernetes base manifests (no Ingress yet)
+      - name: Apply Kubernetes manifests
         if: steps.check-eks.outputs.exists == 'true'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           kubectl apply --validate=false -f terraform/k8s/namespace.yaml
-          kubectl apply --validate=false -f terraform/k8s/storageclass-standard.yaml
           kubectl apply --validate=false -f terraform/k8s/configmap.yaml
-          # Ensure backend is stopped before PVC replace (PVC spec is immutable)
+          # Ensure local-path-provisioner exists for local-path StorageClass
+          if grep -q 'storageClassName: local-path' terraform/k8s/sqlite-pvc.yaml; then
+            kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.26/deploy/local-path-storage.yaml
+            kubectl -n local-path-storage rollout status deploy/local-path-provisioner --timeout=120s || true
+          fi
+          # Scale backend down before PVC changes to release volume mount
           kubectl -n restaurant scale deploy/backend --replicas=0 || true
-          kubectl -n restaurant rollout status deploy/backend --timeout=180s || true
-          # Delete PVC if present (to change storageClassName) then recreate and wait for binding
+          kubectl -n restaurant rollout status deploy/backend --timeout=120s || true
+          # Recreate PVC to avoid immutability issues and wait for binding
           kubectl -n restaurant delete pvc sqlite-pvc --ignore-not-found --wait=true || true
           kubectl apply --validate=false -f terraform/k8s/sqlite-pvc.yaml
           for i in {1..30}; do
@@ -259,11 +263,12 @@ jobs:
             if [ "$phase" = "Bound" ]; then echo "PVC bound"; break; fi;
             echo "Waiting for PVC to bind..."; sleep 10;
           done
-          # Apply deployments and start backend now that PVC is bound
+          # Apply deployments, then scale backend back up and wait for rollout
           sed -e "s|<ECR_BACKEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_BACKEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/backend-deployment.yaml | kubectl apply --validate=false -f -
           sed -e "s|<ECR_FRONTEND_IMAGE>|$ECR_REGISTRY/${{ env.ECR_FRONTEND }}|g" -e "s|<TAG>|$IMAGE_TAG|g" terraform/k8s/frontend-deployment.yaml | kubectl apply --validate=false -f -
           kubectl -n restaurant scale deploy/backend --replicas=1 || true
           kubectl -n restaurant rollout status deploy/backend --timeout=180s || true
+          kubectl apply --validate=false -f terraform/k8s/ingress.yaml
 
 
       - name: Apply IngressClass for AWS ALB controller
@@ -282,6 +287,8 @@ jobs:
       - name: Install AWS Load Balancer Controller
         if: steps.check-eks.outputs.exists == 'true'
         run: |
+          # Clean up pre-existing IngressClass so Helm can own it
+          kubectl delete ingressclass alb --ignore-not-found=true || true
           # Install or upgrade the controller via Helm
           helm repo add eks https://aws.github.io/eks-charts || true
           helm repo update
