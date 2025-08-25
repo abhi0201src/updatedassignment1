@@ -1,30 +1,30 @@
 [
-{
-  "model": "menu.menu",
-  "fields": {
-    "name": "Pizza",
-    "price": 25.0,
+  {
+    "model": "menu.menu",
+    "fields": {
+      "name": "Pizza",
+      "price": 25.0
+    }
+  },
+  {
+    "model": "menu.menu",
+    "fields": {
+      "name": "Burger",
+      "price": 9.99
+    }
+  },
+  {
+    "model": "menu.menu",
+    "fields": {
+      "name": "Pasta",
+      "price": 12.5
+    }
+  },
+  {
+    "model": "menu.menu",
+    "fields": {
+      "name": "Salad",
+      "price": 7.5
+    }
   }
-},
-{
-  "model": "menu.menu",
-  "fields": {
-    "name": "Burger",
-    "price": 9.99,
-  }
-},
-{
-  "model": "menu.menu",
-  "fields": {
-    "name": "Pasta",
-    "price": 12.5,
-  }
-},
-{
-  "model": "menu.menu",
-  "fields": {
-    "name": "Salad",
-    "price": 7.5,
-  }
-}
 ]

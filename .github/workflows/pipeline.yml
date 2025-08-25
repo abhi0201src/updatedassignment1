@@ -359,3 +359,14 @@ jobs:
           kubectl -n restaurant describe ingress restaurant-ingress || true
           kubectl get targetgroupbindings.elbv2.k8s.aws -A || true
 
+      - name: Verify seeded data via API
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          HOST=$(kubectl -n restaurant get ingress restaurant-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+          if [ -n "$HOST" ]; then
+            echo "Menu sample:" | tee -a $GITHUB_STEP_SUMMARY
+            curl -sS http://$HOST/api/menu | head -c 500 | tee -a $GITHUB_STEP_SUMMARY || true
+          else
+            echo "No HOST to verify menu API" | tee -a $GITHUB_STEP_SUMMARY
+          fi
+
