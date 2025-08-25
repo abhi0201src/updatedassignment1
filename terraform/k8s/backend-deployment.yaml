@@ -13,6 +13,28 @@ spec:
       labels:
         app: backend
     spec:
+      initContainers:
+        - name: db-migrate-seed
+          image: <ECR_BACKEND_IMAGE>:<TAG>
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DJANGO_SETTINGS_MODULE
+              value: RestaurantCore.settings
+            - name: SQLITE_PATH
+              value: /data/db.sqlite3
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              set -e
+              cd /app
+              python manage.py migrate --noinput
+              if [ -f "menu/fixtures/initial_menu.json" ] && [ ! -f "/data/.seeded" ]; then
+                echo "Seeding initial data...";
+                python manage.py loaddata initial_menu.json && touch /data/.seeded || true;
+              fi
+          volumeMounts:
+            - name: sqlite-data
+              mountPath: /data
       containers:
         - name: backend
           image: <ECR_BACKEND_IMAGE>:<TAG>
