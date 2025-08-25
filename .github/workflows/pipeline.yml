@@ -370,3 +370,11 @@ jobs:
             echo "No HOST to verify menu API" | tee -a $GITHUB_STEP_SUMMARY
           fi
 
+      - name: Debug: backend initContainer logs and DB count
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          echo "InitContainer logs (db-migrate-seed):" | tee -a $GITHUB_STEP_SUMMARY
+          kubectl -n restaurant logs deploy/backend -c db-migrate-seed --tail=200 || true | tee -a $GITHUB_STEP_SUMMARY
+          echo "Menu count from Django shell:" | tee -a $GITHUB_STEP_SUMMARY
+          kubectl -n restaurant exec deploy/backend -- sh -lc 'cd /app && python manage.py shell -c "from menu.models import Menu; print(Menu.objects.count())"' | tee -a $GITHUB_STEP_SUMMARY || true
+
