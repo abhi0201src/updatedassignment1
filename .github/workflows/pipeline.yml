@@ -373,3 +373,8 @@ jobs:
           echo "Menu count from Django shell:" | tee -a $GITHUB_STEP_SUMMARY
           kubectl -n restaurant exec deploy/backend -- sh -lc 'cd /app && python manage.py shell -c "from menu.models import Menu; print(Menu.objects.count())"' | tee -a $GITHUB_STEP_SUMMARY || true
 
+      - name: De-duplicate Menu entries (one-time cleanup)
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          kubectl -n restaurant exec deploy/backend -- sh -lc 'cd /app && python manage.py shell -c "from menu.models import Menu; from django.db.models import Min; keep = Menu.objects.values(\"name\",\"price\").annotate(id_keep=Min(\"id\")); keep_ids=set([r[\"id_keep\"] for r in keep]); Menu.objects.exclude(id__in=keep_ids).delete(); print(Menu.objects.count())"' | tee -a $GITHUB_STEP_SUMMARY || true
+
