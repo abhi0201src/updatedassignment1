@@ -3,28 +3,36 @@
     "model": "menu.menu",
     "fields": {
       "name": "Pizza",
-      "price": 25.0
+      "price": 25.0,
+      "created": "2025-01-01T00:00:00Z",
+      "updated": "2025-01-01T00:00:00Z"
     }
   },
   {
     "model": "menu.menu",
     "fields": {
       "name": "Burger",
-      "price": 9.99
+      "price": 9.99,
+      "created": "2025-01-01T00:00:00Z",
+      "updated": "2025-01-01T00:00:00Z"
     }
   },
   {
     "model": "menu.menu",
     "fields": {
       "name": "Pasta",
-      "price": 12.5
+      "price": 12.5,
+      "created": "2025-01-01T00:00:00Z",
+      "updated": "2025-01-01T00:00:00Z"
     }
   },
   {
     "model": "menu.menu",
     "fields": {
       "name": "Salad",
-      "price": 7.5
+      "price": 7.5,
+      "created": "2025-01-01T00:00:00Z",
+      "updated": "2025-01-01T00:00:00Z"
     }
   }
 ]

@@ -30,7 +30,11 @@ spec:
               python manage.py migrate --noinput
               if [ -f "menu/fixtures/initial_menu.json" ] && [ ! -f "/data/.seeded" ]; then
                 echo "Seeding initial data...";
-                python manage.py loaddata initial_menu.json && touch /data/.seeded || true;
+                if python manage.py loaddata initial_menu.json; then
+                  touch /data/.seeded;
+                else
+                  echo "loaddata failed"; exit 1;
+                fi
               fi
           volumeMounts:
             - name: sqlite-data
