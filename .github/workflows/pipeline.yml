@@ -265,11 +265,6 @@ jobs:
           kubectl -n restaurant scale deploy/backend --replicas=1 || true
           kubectl -n restaurant rollout status deploy/backend --timeout=180s || true
 
-      - name: Apply IngressClass for AWS ALB controller
-        if: steps.check-eks.outputs.exists == 'true'
-        run: |
-          kubectl apply --validate=false -f terraform/k8s/ingressclass.yaml
-
       # Let Helm install CRDs for the AWS Load Balancer Controller
 
       - name: "Debug: list namespaces and resources"
@@ -370,7 +365,7 @@ jobs:
             echo "No HOST to verify menu API" | tee -a $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Debug: backend initContainer logs and DB count
+      - name: "Debug: backend initContainer logs and DB count"
         if: steps.check-eks.outputs.exists == 'true'
         run: |
           echo "InitContainer logs (db-migrate-seed):" | tee -a $GITHUB_STEP_SUMMARY
