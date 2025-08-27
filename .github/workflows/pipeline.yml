@@ -276,8 +276,6 @@ jobs:
       - name: Install AWS Load Balancer Controller
         if: steps.check-eks.outputs.exists == 'true'
         run: |
-          # Clean up pre-existing IngressClass so Helm can own it
-          kubectl delete ingressclass alb --ignore-not-found=true || true
           # Install or upgrade the controller via Helm
           helm repo add eks https://aws.github.io/eks-charts || true
           helm repo update
@@ -294,6 +292,15 @@ jobs:
         if: steps.check-eks.outputs.exists == 'true'
         run: |
           kubectl -n kube-system rollout status deploy/aws-load-balancer-controller --timeout=180s || true
+
+      - name: Wait for ALB controller webhook service
+        if: steps.check-eks.outputs.exists == 'true'
+        run: |
+          for i in {1..60}; do
+            READY=$(kubectl -n kube-system get endpoints aws-load-balancer-webhook-service -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)
+            if [ -n "$READY" ]; then echo "Webhook service endpoints ready"; break; fi
+            echo "Waiting for webhook endpoints..."; sleep 5;
+          done
 
       - name: Grant node role ELB access (temporary unblock)
         if: steps.check-eks.outputs.exists == 'true'
